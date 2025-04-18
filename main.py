@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 from flask import Flask, request, jsonify
 from threading import Thread
-from keep_alive import keep_alive
+
 from dotenv import load_dotenv
 import logging
 
@@ -81,7 +81,6 @@ def run_flask():
 
 
 Thread(target=run_flask).start()
-keep_alive()
 
 # Run the bot
 bot.run(BOT_TOKEN)
