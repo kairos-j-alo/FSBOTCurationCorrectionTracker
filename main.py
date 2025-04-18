@@ -38,6 +38,8 @@ log.info("BOT_TOKEN and SECRET_API_KEY loaded successfully.")
 # Define necessary intents
 intents = discord.Intents.default()
 intents.members = True # Required for fetch_user/fetch_channel in some cases
+# If you ever add text commands, uncomment the line below and enable in the portal
+# intents.message_content = True
 
 # Initialize the bot instance
 bot = commands.Bot(command_prefix="!", intents=intents) # Using commands.Bot is fine
@@ -95,22 +97,27 @@ def notify():
         full_message = f"{message}\n\n{link}" if link else message
 
         # --- Define the Asynchronous Discord Task ---
+        # Indentation: This entire async def block must be indented inside the notify function
         async def send_discord_message():
             """Coroutine to handle the actual Discord interaction."""
+            # Indentation: This block must be indented inside send_discord_message
             log.info("Waiting for bot to be ready before sending...")
             await bot.wait_until_ready() # Crucial: wait until bot is fully connected
             log.info("Bot is ready. Proceeding with send action.")
 
             try:
+                # Indentation: This block must be indented inside the try
                 if mode == "dm":
+                    # Indentation: This block must be indented inside the if mode == 'dm'
                     if not user_id_str:
                         log.warning("DM mode specified but 'user_id' is missing in data.")
-                        # Optionally return or just log, depending on desired strictness
                         return # Stop processing this task
 
                     try:
+                        # Indentation: Inside the try block
                         user_id = int(user_id_str) # Convert ID to integer
                     except ValueError:
+                        # Indentation: Inside the except block
                         log.warning(f"Invalid 'user_id' format received: {user_id_str}. Must be an integer.")
                         return # Stop processing this task
 
@@ -121,13 +128,16 @@ def notify():
                     log.info(f"✅ DM sent successfully to user {user_id}")
 
                 elif mode == "channel":
+                    # Indentation: This block must be indented inside the elif mode == 'channel'
                     if not channel_id_str:
                         log.warning("Channel mode specified but 'channel_id' is missing in data.")
                         return # Stop processing this task
 
                     try:
+                        # Indentation: Inside the try block
                         channel_id = int(channel_id_str) # Convert ID to integer
                     except ValueError:
+                        # Indentation: Inside the except block
                         log.warning(f"Invalid 'channel_id' format received: {channel_id_str}. Must be an integer.")
                         return # Stop processing this task
 
@@ -146,34 +156,47 @@ def notify():
                         log.warning(f"Fetched channel {channel_id} is not a TextChannel (Type: {type(channel)}). Cannot send message.")
                     else:
                         # fetch_channel raises NotFound/Forbidden if it fails, caught below
+                        # This log might not be reached if fetch_channel raises, but good for completeness
                         log.warning(f"Could not find channel {channel_id} after fetch attempt.")
 
 
                 else:
+                    # Indentation: Inside the main try block, aligned with the if/elif
                     log.warning(f"Invalid mode specified in request: '{mode}'. Must be 'dm' or 'channel'.")
 
             # --- Specific Discord Error Handling ---
+            # Indentation: Aligned with the try block above
             except discord.errors.NotFound:
                 target_id = user_id_str if mode == 'dm' else channel_id_str
-                log.error(f"❌ Discord Error: Could not find the specified user/channel ({target_id}). Please check the ID.", exc_info=False) # No need for traceback for NotFound
+                log.error(f"❌ Discord Error: Could not find the specified user/channel ({target_id}). Please check the ID.", exc_info=False)
             except discord.errors.Forbidden:
                 target_id = user_id_str if mode == 'dm' else channel_id_str
-                log.error(f"❌ Discord Error: Bot lacks permissions to send to the user/channel ({target_id}). Check bot's roles/permissions.", exc_info=False) # No need for traceback for Forbidden
+                log.error(f"❌ Discord Error: Bot lacks permissions to send to the user/channel ({target_id}). Check bot's roles/permissions.", exc_info=False)
             # --- General Error Handling ---
             except Exception as e:
-                # Log any other unexpected errors during Discord interaction
-                log.error(f"❌ An unexpected error occurred within send_discord_message: {e}", exc_info=True) # Include traceback for unexpected errors
+                log.error(f"❌ An unexpected error occurred within send_discord_message: {e}", exc_info=True)
 
-        # --- Schedule the Discord Task ---
-        log.info("Scheduling the send_discord_message task using asyncio.create_task.")
-        asyncio.create_task(send_discord_message())
 
-        # --- Return Success Response to Caller ---
-        # Respond immediately, don't wait for the Discord message to send
-        return jsonify({"status": "Message queued for sending"}), 200
+        # --- Schedule the Discord Task onto the bot's event loop ---
+        # Indentation: Back to the main level inside the notify function's try block
+        log.info("Attempting to schedule the send_discord_message task onto the bot's event loop.")
 
+        # Check if the bot's loop is available and running
+        if bot.loop and bot.loop.is_running():
+            # Indentation: Inside the if bot.loop check
+            # Use call_soon_threadsafe to schedule the task creation onto the bot's loop
+            bot.loop.call_soon_threadsafe(asyncio.create_task, send_discord_message())
+            log.info("Task scheduling requested via call_soon_threadsafe.")
+            # Respond immediately
+            return jsonify({"status": "Message queued for sending"}), 200
+        else:
+            # Indentation: Inside the else corresponding to if bot.loop check
+            log.error("Bot event loop is not available or not running to schedule task.")
+            return jsonify({"error": "Internal server error: Bot not ready or loop unavailable"}), 503 # 503 Service Unavailable
+
+    # Indentation: Aligned with the main try block of the notify function
     except Exception as e:
-        # Catch errors during initial request processing (before task scheduling)
+        # Catch errors during initial request processing (e.g., JSON parsing issues before scheduling)
         log.error(f"❌ Error processing /notify request BEFORE scheduling Discord task: {e}", exc_info=True)
         return jsonify({"error": "Internal server error processing request"}), 500
 
@@ -186,7 +209,8 @@ def run_flask():
     # Port 8080 is a common default for Render web services (check your Render service settings)
     log.info("Starting Flask server thread on host 0.0.0.0, port 8080.")
     try:
-        # Use Werkzeug's production server or just app.run for simplicity here
+        # Consider using a production WSGI server like gunicorn or waitress for real deployments
+        # For Render, app.run() is often sufficient for simple cases
         app.run(host="0.0.0.0", port=8080)
     except Exception as e:
          # Log if the Flask server itself fails to start or crashes
@@ -206,8 +230,11 @@ try:
     log.info("Starting Discord bot login and connection...")
     bot.run(BOT_TOKEN)
 except discord.LoginFailure:
-    log.error("FATAL: Improper token passed to bot.run(). Check BOT_TOKEN.", exc_info=True)
+    log.error("FATAL: Improper token passed to bot.run(). Check BOT_TOKEN.", exc_info=False) # No need for traceback here
+except discord.errors.PrivilegedIntentsRequired:
+    log.error("FATAL: Privileged intents (likely Server Members or Message Content) are not enabled in the Discord Developer Portal.", exc_info=False)
+    log.error("Please go to https://discord.com/developers/applications/ -> Your App -> Bot -> Privileged Gateway Intents and enable them.")
 except Exception as e:
-     log.error(f"FATAL: An error occurred while running the bot: {e}", exc_info=True)
+     log.error(f"FATAL: An unexpected error occurred while running the bot: {e}", exc_info=True)
 
-log.info("Bot process has exited.") # This line might only be reached if bot.run stops gracefully or fails
+log.info("Bot process has exited.")
