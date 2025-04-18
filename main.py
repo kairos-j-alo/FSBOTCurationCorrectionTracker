@@ -5,12 +5,22 @@ from flask import Flask, request, jsonify
 from threading import Thread
 from keep_alive import keep_alive
 from dotenv import load_dotenv
+import logging
 
+# Load environment variables
 load_dotenv()
+
+# Setup logging for better error tracking
+logging.basicConfig(level=logging.INFO)
 
 # Load tokens
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_SECRET = os.getenv("SECRET_API_KEY")
+
+# Ensure environment variables are set
+if not BOT_TOKEN or not API_SECRET:
+    logging.error("Bot token or API secret is missing!")
+    exit(1)
 
 # Setup Discord bot
 intents = discord.Intents.default()
@@ -19,7 +29,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 app = Flask(__name__)
 
-
 @app.route('/notify', methods=['POST'])
 def notify():
     data = request.json
@@ -27,6 +36,7 @@ def notify():
 
     # Security check
     if api_key != API_SECRET:
+        logging.warning(f"Unauthorized request from API key: {api_key}")
         return jsonify({"error": "Unauthorized"}), 401
 
     mode = data.get("mode")
@@ -36,6 +46,7 @@ def notify():
     channel_id = data.get("channel_id")
 
     if not mode or not message:
+        logging.warning("Missing 'mode' or 'message' in request data")
         return jsonify({"error": "Missing 'mode' or 'message'"}), 400
 
     full_message = f"{message}\n\n{link}" if link else message
@@ -47,17 +58,17 @@ def notify():
                     raise ValueError("Missing 'user_id' for DM mode")
                 user = await bot.fetch_user(int(user_id))
                 await user.send(full_message)
-                print(f"✅ DM sent to user {user_id}")
+                logging.info(f"✅ DM sent to user {user_id}")
             elif mode == "channel":
                 if not channel_id:
                     raise ValueError("Missing 'channel_id' for channel mode")
                 channel = await bot.fetch_channel(int(channel_id))
                 await channel.send(full_message)
-                print(f"✅ Message sent to channel {channel_id}")
+                logging.info(f"✅ Message sent to channel {channel_id}")
             else:
                 raise ValueError("Invalid mode specified")
         except Exception as e:
-            print(f"❌ Error: {e}")
+            logging.error(f"❌ Error: {e}")
 
     bot.loop.create_task(send_message())
 
@@ -71,4 +82,6 @@ def run_flask():
 
 Thread(target=run_flask).start()
 keep_alive()
+
+# Run the bot
 bot.run(BOT_TOKEN)
