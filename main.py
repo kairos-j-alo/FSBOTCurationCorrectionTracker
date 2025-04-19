@@ -1,3 +1,57 @@
+ import os
+ import discord
+ from discord.ext import commands
+ from flask import Flask, request, jsonify
+ from threading import Thread
+ from dotenv import load_dotenv
+ import logging
+ import asyncio
+ 
+ # --- Configuration ---
+ 
+ # Load environment variables from .env file if it exists
+ load_dotenv()
+ 
+ # Setup logging
+ # Using a format makes logs clearer in Render
+ logging.basicConfig(level=logging.INFO, format='%(asctime)s:%(levelname)s:%(name)s: %(message)s')
+ log = logging.getLogger(__name__) # Use a named logger
+ 
+ # Load sensitive tokens from environment variables
+ BOT_TOKEN = os.getenv("BOT_TOKEN")
+ API_SECRET = os.getenv("SECRET_API_KEY")
+ 
+ # --- Environment Variable Checks ---
+ 
+ # Ensure environment variables are actually set
+ if not BOT_TOKEN:
+     log.error("FATAL: BOT_TOKEN environment variable is missing!")
+     exit(1) # Exit if essential config is missing
+ if not API_SECRET:
+     log.error("FATAL: SECRET_API_KEY environment variable is missing!")
+     exit(1)
+ 
+ log.info("BOT_TOKEN and SECRET_API_KEY loaded successfully.")
+ 
+ # --- Discord Bot Setup ---
+ 
+ # Define necessary intents
+ intents = discord.Intents.default()
+ intents.members = True # Required for fetch_user/fetch_channel in some cases
+ # If you ever add text commands, uncomment the line below and enable in the portal
+ # intents.message_content = True
+ 
+ # Initialize the bot instance
+ bot = commands.Bot(command_prefix="!", intents=intents) # Using commands.Bot is fine
+ 
+ @bot.event
+ async def on_ready():
+     """Event handler for when the bot logs in and is ready."""
+     log.info(f'Bot logged in as {bot.user.name} ({bot.user.id})')
+     log.info('Bot is ready and listening for API calls.')
+ 
+
+
 # --- Flask Web Server Setup ---
 
 # Initialize the Flask app
@@ -152,4 +206,34 @@ def notify():
         log.error(f"❌ Error processing /notify {request.method} request: {e}", exc_info=True)
         return jsonify({"error": "Internal server error processing request"}), 500
 
-# --- (Rest of your bot code: run_flask, bot.run, etc. remains the same) ---
+
+ # --- Flask Server Execution ---
+ 
+ def run_flask():
+     """Runs the Flask app."""
+     log.info("Starting Flask server thread on host 0.0.0.0, port 8080.")
+     try:
+         # Consider using waitress or gunicorn for production
+         app.run(host="0.0.0.0", port=8080) # Use Render's suggested port or 8080
+     except Exception as e:
+          log.error(f"Flask server thread failed: {e}", exc_info=True)
+ 
+ # Start Flask in a separate thread
+ log.info("Creating and starting Flask thread.")
+ flask_thread = Thread(target=run_flask, daemon=True)
+ flask_thread.start()
+ 
+ 
+ # --- Discord Bot Execution ---
+ try:
+     log.info("Starting Discord bot login and connection...")
+     bot.run(BOT_TOKEN)
+ except discord.LoginFailure:
+     log.error("FATAL: Improper token passed to bot.run(). Check BOT_TOKEN.", exc_info=False)
+ except discord.errors.PrivilegedIntentsRequired:
+     log.error("FATAL: Privileged intents (likely Server Members or Message Content) are not enabled in the Discord Developer Portal.", exc_info=False)
+     log.error("Please go to https://discord.com/developers/applications/ -> Your App -> Bot -> Privileged Gateway Intents and enable them.")
+ except Exception as e:
+      log.error(f"FATAL: An unexpected error occurred while running the bot: {e}", exc_info=True)
+ 
+ log.info("Bot process has exited.")
