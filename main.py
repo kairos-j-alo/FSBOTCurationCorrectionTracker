@@ -88,17 +88,20 @@ def notify():
         elif request.method == 'POST':
             log.info("Processing POST request...")
 
-            # --- Request Validation and Security (POST ONLY) --- <<< MOVED HERE
+            # --- ⚠️🚧 API KEY CHECK DISABLED FOR DEBUGGING ---
+            
             # 1. Check API Key - Essential ONLY for POST requests
-            api_key = request.headers.get("api-key")
-            log.info(f"Checking API Key for POST. Header: {'Present' if api_key else 'Missing'}")
-            if api_key != API_SECRET:
+            # api_key = request.headers.get("api-key")
+            # log.info(f"Checking API Key for POST. Header: {'Present' if api_key else 'Missing'}")
+            # if api_key != API_SECRET:
                 # Log the first few chars for debugging without exposing the whole key if wrong
-                provided_key_snippet = str(api_key)[:5] + '...' if api_key else 'None'
-                log.warning(f"Unauthorized POST request attempt. Provided key snippet: '{provided_key_snippet}'")
-                return jsonify({"error": "Unauthorized"}), 401
-            log.info("API Key validated successfully for POST request.")
+            #    provided_key_snippet = str(api_key)[:5] + '...' if api_key else 'None'
+            #    log.warning(f"Unauthorized POST request attempt. Provided key snippet: '{provided_key_snippet}'")
+            #    return jsonify({"error": "Unauthorized"}), 401
+            #log.info("API Key validated successfully for POST request.")
             # --- End API Key Check ---
+            
+            # --- API KEY CHECK DISABLED FOR DEBUGGING ⚠️🚧 ---
 
             # 2. Check for JSON body and parse it (POST only)
             if not request.is_json:
