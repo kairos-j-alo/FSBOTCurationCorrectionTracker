@@ -41,17 +41,20 @@ log.info("BOT_TOKEN and SECRET_API_KEY loaded successfully.")
 # Define necessary intents
 intents = discord.Intents.default()
 intents.members = True # Required for fetch_user/fetch_channel in some cases
-# If you ever add text commands, uncomment the line below and enable in the portal
-# intents.message_content = True
 
 # Initialize the bot instance
-bot = commands.Bot(command_prefix="!", intents=intents) # Using commands.Bot is fine
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+# ✅ SOLUTION: Add a global flag to reliably track the bot's readiness.
+BOT_IS_READY = False
 
 @bot.event
 async def on_ready():
-    """Event handler for when the bot logs in and is ready."""
+    """Event handler for when the bot logs in and is fully ready."""
+    global BOT_IS_READY # Use the global keyword to modify the flag
     log.info(f'Bot logged in as {bot.user.name} ({bot.user.id})')
-    log.info('Bot is ready and listening for API calls.')
+    log.info('Bot is now fully ready and listening for API calls.')
+    BOT_IS_READY = True # Set the flag to True once the bot is ready.
 
 
 # --- Flask Web Server Setup ---
@@ -59,238 +62,178 @@ async def on_ready():
 # Initialize the Flask app
 app = Flask(__name__)
 
-# MODIFICATION: Added 'HEAD' to the methods list for UptimeRobot Free Tier
 @app.route('/notify', methods=['POST', 'GET', 'HEAD'])
 def notify():
     """
     API endpoint to receive notifications (POST), keep-alive pings (GET),
-    or header-only keep-alive pings (HEAD for UptimeRobot Free Tier).
+    or header-only keep-alive pings (HEAD).
     Sends Discord messages for POST requests. Requires X-API-Key header for POST.
     """
-    log.info(f"Received {request.method} request on /notify endpoint.") # Log method
+    log.info(f"Received {request.method} request on /notify endpoint from {request.remote_addr}.")
 
     try:
         # --- Method-Specific Handling ---
 
-        # Handle GET requests (Useful for manual testing or other services)
-        if request.method == 'GET':
-            # No API Key check needed for GET
-            log.info("GET request received. Responding OK. No API Key required.")
-            return jsonify({"status": "Bot is awake and responding to GET."}), 200
+        # Handle GET/HEAD requests (for health checks and uptime monitoring)
+        if request.method in ('GET', 'HEAD'):
+            # Check the bot's ready status for a more informative health check
+            if BOT_IS_READY:
+                return jsonify({"status": "Bot is online and ready."}), 200
+            else:
+                return jsonify({"status": "Bot is running but not yet ready."}), 503 # Service Unavailable
 
-        # MODIFICATION: Handle HEAD requests specifically for UptimeRobot Free Tier
-        elif request.method == 'HEAD':
-            # No API Key check needed for HEAD
-            log.info("HEAD request received (likely UptimeRobot keep-alive). Responding OK (No Body). No API Key required.")
-            # For HEAD, we just need to return a success status code.
-            # Flask automatically ensures no body is sent for a HEAD request
-            # when you return like this. An empty string is conventional.
-            return "", 200 # Return empty body, 200 OK status
-
-        # Handle POST requests (original functionality)
+        # Handle POST requests (the main functionality)
         elif request.method == 'POST':
             log.info("Processing POST request...")
 
-        
-            
-            # 1. ⚠️🚧 Check API Key - Essential ONLY for POST requests
+            # 1. Check API Key
             api_key = request.headers.get("X-API-Key")
-            log.info(f"Checking API Key for POST. Header: {'Present' if api_key else 'Missing'}")
             if api_key != API_SECRET:
-                # Log the first few chars for debugging without exposing the whole key if wrong
                 provided_key_snippet = str(api_key)[:5] + '...' if api_key else 'None'
-                log.warning(f"Unauthorized POST request attempt. Provided key snippet: '{provided_key_snippet}'")
+                log.warning(f"Unauthorized POST request attempt. Provided key: '{provided_key_snippet}'")
                 return jsonify({"error": "Unauthorized"}), 401
-            log.info("API Key validated successfully for POST request.")
-            
-            # --- End API Key Check ⚠️🚧---
-            
-      
+            log.info("API Key validated successfully.")
 
-            # 2. Check for JSON body and parse it (POST only)
+            # 2. Check for JSON body
             if not request.is_json:
-                log.warning("POST request received without 'Content-Type: application/json' header.")
+                log.warning("POST request lacks 'Content-Type: application/json' header.")
                 return jsonify({"error": "Request must be JSON"}), 400
             data = request.get_json()
             if not data:
-                log.warning("POST request received with JSON Content-Type but empty or invalid body.")
+                log.warning("POST request has empty/invalid JSON body.")
                 return jsonify({"error": "Missing or invalid JSON body"}), 400
             log.info(f"Received POST data: {data}")
 
-            # 3. Extract required data fields (POST only)
+            # 3. Extract and validate required data fields
             mode = data.get("mode")
             message = data.get("message")
-
-            # 4. Validate required fields (POST only)
             if not mode or not message:
-                log.warning(f"Missing 'mode' (got: '{mode}') or 'message' (got: '{message}') in POST request data")
+                log.warning(f"Missing 'mode' or 'message' in POST data.")
                 return jsonify({"error": "Missing 'mode' or 'message' fields"}), 400
 
-            link = data.get("link", "") # Optional field
-            user_id_str = data.get("user_id") # Get as string for now
-            channel_id_str = data.get("channel_id") # Get as string for now
-
-            # --- Prepare Message (POST only) ---
+            # 4. Extract optional fields
+            link = data.get("link", "")
+            user_id_str = data.get("user_id")
+            channel_id_str = data.get("channel_id")
             full_message = f"{message}\n\n{link}" if link else message
 
-            # --- Define the Asynchronous Discord Task (POST only) ---
+            # --- Define the Asynchronous Discord Task ---
             async def send_discord_message():
                 """Coroutine to handle the actual Discord interaction."""
-                log.info("Waiting for bot to be ready before sending...")
-                await bot.wait_until_ready() # Crucial: wait until bot is fully connected
-                log.info("Bot is ready. Proceeding with send action.")
+                # The `await bot.wait_until_ready()` is still good practice inside the coroutine,
+                # acting as a final safeguard.
+                await bot.wait_until_ready()
+                log.info("Coroutine started: Proceeding with send action.")
 
                 try:
-                    # (Rest of the send_discord_message logic remains the same)
                     if mode == "dm":
                         if not user_id_str:
-                            log.warning("DM mode specified but 'user_id' is missing in data.")
-                            return # Don't proceed if ID is missing
+                            log.warning("DM mode specified but 'user_id' is missing.")
+                            return
                         try:
                             user_id = int(user_id_str)
+                            user = await bot.fetch_user(user_id)
+                            await user.send(full_message)
+                            log.info(f"✅ DM sent successfully to user {user_id}")
                         except ValueError:
-                            log.warning(f"Invalid 'user_id' format received: {user_id_str}. Must be an integer.")
-                            return # Don't proceed if ID is invalid
-
-                        log.info(f"Attempting to fetch user {user_id}")
-                        user = await bot.fetch_user(user_id)
-                        log.info(f"Attempting to send DM to {user.name} ({user_id})")
-                        await user.send(full_message)
-                        log.info(f"✅ DM sent successfully to user {user_id}")
+                            log.warning(f"Invalid 'user_id' format: {user_id_str}.")
+                        except discord.NotFound:
+                            log.error(f"❌ Discord Error: User with ID {user_id_str} not found.")
+                        except discord.Forbidden:
+                            log.error(f"❌ Discord Error: Cannot send DM to user {user_id_str}. They may have DMs disabled.")
 
                     elif mode == "channel":
                         if not channel_id_str:
-                            log.warning("Channel mode specified but 'channel_id' is missing in data.")
-                            return # Don't proceed if ID is missing
+                            log.warning("Channel mode specified but 'channel_id' is missing.")
+                            return
                         try:
                             channel_id = int(channel_id_str)
+                            # Using `get_channel` with a fallback to `fetch_channel` is efficient
+                            channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
+                            
+                            if channel and hasattr(channel, 'send'):
+                                await channel.send(full_message)
+                                log.info(f"✅ Message sent successfully to channel {channel_id}")
+                            elif channel:
+                                log.warning(f"Fetched channel {channel_id} is not a sendable channel (Type: {type(channel)}).")
+                            else:
+                                 log.warning(f"Could not find channel {channel_id} after fetch attempt.")
                         except ValueError:
-                            log.warning(f"Invalid 'channel_id' format received: {channel_id_str}. Must be an integer.")
-                            return # Don't proceed if ID is invalid
-
-                        log.info(f"Attempting to fetch channel {channel_id}")
-                        channel = bot.get_channel(channel_id)
-                        if not channel:
-                            log.info(f"Channel {channel_id} not in cache, attempting direct fetch...")
-                            channel = await bot.fetch_channel(channel_id)
-
-                        if channel and isinstance(channel, discord.TextChannel):
-                            log.info(f"Attempting to send message to channel #{channel.name} ({channel_id})")
-                            await channel.send(full_message)
-                            log.info(f"✅ Message sent successfully to channel {channel_id}")
-                        elif channel:
-                            log.warning(f"Fetched channel {channel_id} is not a TextChannel (Type: {type(channel)}). Cannot send message.")
-                        else:
-                             log.warning(f"Could not find channel {channel_id} after fetch attempt.")
-
+                             log.warning(f"Invalid 'channel_id' format: {channel_id_str}.")
+                        except discord.NotFound:
+                            log.error(f"❌ Discord Error: Channel with ID {channel_id_str} not found.")
+                        except discord.Forbidden:
+                            log.error(f"❌ Discord Error: Bot lacks permissions for channel {channel_id_str}.")
                     else:
-                        log.warning(f"Invalid mode specified in request: '{mode}'. Must be 'dm' or 'channel'.")
+                        log.warning(f"Invalid mode specified: '{mode}'.")
 
-                # --- Specific Discord Error Handling ---
-                except discord.errors.NotFound:
-                    target_id = user_id_str if mode == 'dm' else channel_id_str
-                    log.error(f"❌ Discord Error: Could not find the specified user/channel ({target_id}). Please check the ID.", exc_info=False) # exc_info=False for cleaner logs here
-                except discord.errors.Forbidden:
-                    target_id = user_id_str if mode == 'dm' else channel_id_str
-                    log.error(f"❌ Discord Error: Bot lacks permissions to send to the user/channel ({target_id}). Check bot's roles/permissions.", exc_info=False) # exc_info=False
-                # --- General Error Handling ---
                 except Exception as e:
-                    log.error(f"❌ An unexpected error occurred within send_discord_message: {e}", exc_info=True) # Keep exc_info=True for unexpected errors
+                    log.error(f"❌ Unexpected error within send_discord_message: {e}", exc_info=True)
 
-            # --- Schedule the Discord Task onto the bot's event loop (POST only) ---
-            log.info("Attempting to schedule the send_discord_message task onto the bot's event loop.")
-            if bot.loop and bot.loop.is_running():
-                # Use asyncio.create_task before passing to call_soon_threadsafe
-                # Schedule the coroutine to run on the bot's event loop
-                # NOTE: Using create_task is generally preferred for starting background tasks
-                # within an async function defined in the same scope.
-                # call_soon_threadsafe is mainly for scheduling from *other threads*.
-                # Since we are already *in* the Flask request handler (likely a worker thread),
-                # scheduling onto the bot's loop (running in another thread) IS the correct
-                # use case for call_soon_threadsafe. However, we need to schedule the *coroutine object*
-                # execution itself using something the loop understands, like ensure_future or create_task.
-                # The most robust way is often to create the task first.
+            # ✅ SOLUTION: Check the BOT_IS_READY flag before scheduling the task.
+            log.info("Checking if bot is ready before scheduling message...")
+            if not BOT_IS_READY:
+                log.warning("API call received, but bot is not ready yet. Responding with 503.")
+                return jsonify({"error": "Service Unavailable: Bot is still initializing"}), 503
+            
+            # If we get here, the bot is ready.
+            log.info("Bot is ready. Scheduling the send_discord_message task.")
+            bot.loop.call_soon_threadsafe(lambda: asyncio.create_task(send_discord_message()))
 
-                #  Option 1: Create Task then schedule (More explicit)
-                #future = asyncio.run_coroutine_threadsafe(send_discord_message(), bot.loop)
-                #log.info("Task scheduling requested via run_coroutine_threadsafe.")
-                 # Optional: Add a callback if you need to know when it finishes/errors, but maybe overkill here.
-                # # future.add_done_callback(lambda f: log.info(f"Discord send task completed: {f.result()} or exception: {f.exception()}"))
+            # Return a 202 Accepted response to indicate the request was received and is being processed.
+            return jsonify({"status": "Message queued for sending"}), 202
 
-                # ✅ Option 2: Simpler scheduling via create_task within call_soon_threadsafe's lambda (Common pattern)
-                #   This ensures create_task is called *within* the bot's loop thread.
-                bot.loop.call_soon_threadsafe(lambda: asyncio.create_task(send_discord_message()))
-
-                log.info("Task scheduling requested via call_soon_threadsafe.")
-                # Return success immediately after queuing
-                return jsonify({"status": "Message queued for sending"}), 200
-            else:
-                log.error("Bot event loop is not available or not running to schedule task.")
-                return jsonify({"error": "Internal server error: Bot not ready or loop unavailable"}), 503
-
-        # Added for completeness, although Flask should handle this based on 'methods'
-        else:
-             log.warning(f"Received unexpected method: {request.method}")
-             return jsonify({"error": "Method Not Allowed"}), 405
-
-    # --- General Error Handling for the entire request ---
     except Exception as e:
-        # Catch errors during initial request processing (e.g., reading request)
-        log.error(f"❌ Error processing /notify {request.method} request BEFORE specific logic: {e}", exc_info=True)
-        return jsonify({"error": "Internal server error processing request"}), 500
+        log.error(f"❌ Unhandled error processing {request.method} request: {e}", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # --- Flask Server Execution ---
 
 def run_flask():
      """Runs the Flask app."""
-     # Recommended: Use 'waitress' for production instead of Flask's dev server
-     # You would install it (`pip install waitress`) and run like:
-     # from waitress import serve
-     # serve(app, host="0.0.0.0", port=8080)
-     # But for simplicity/compatibility with current setup:
-     log.info("Starting Flask server thread on host 0.0.0.0, port 8080.")
+     log.info("Starting Flask server thread.")
      try:
-         # Use Render's suggested port or 8080 common default
-         port = int(os.environ.get("PORT", 8080)) # Get port from env if available
-         app.run(host="0.0.0.0", port=port) # Use the dynamic port
+         port = int(os.environ.get("PORT", 8080))
+         # Use Flask's built-in server. For production, consider 'waitress'.
+         app.run(host="0.0.0.0", port=port, debug=False)
      except Exception as e:
           log.error(f"Flask server thread failed: {e}", exc_info=True)
 
-# Start Flask in a separate thread
+# Start Flask in a separate, daemonic thread
 log.info("Creating and starting Flask thread.")
-# daemon=True allows main thread (bot) to exit even if flask thread is running
 flask_thread = Thread(target=run_flask, daemon=True)
 flask_thread.start()
 
 
 # --- Discord Bot Execution ---
-# This should be the main blocking call at the end of the script
+
+# ✅ SOLUTION: Use a resilient `while` loop to handle connection errors and prevent crash-loops.
 RETRY_DELAY = 600 # Delay in seconds (600 seconds = 10 minutes)
 
 while True:
     try:
         log.info("Attempting to start Discord bot...")
-        # The bot.run() call is blocking, so the script will stay here
-        # if the login is successful and the bot is running.
+        # This call is blocking and will run until the bot disconnects or an error occurs.
         bot.run(BOT_TOKEN)
 
     except discord.errors.HTTPException as e:
-        # This catches login errors like 429 Too Many Requests.
-        log.error(f"FATAL: Discord HTTP Exception: {e.status} {e.text}")
+        # This catches login errors like 429 Too Many Requests (Cloudflare ban).
+        log.error(f"Discord HTTP Exception: {e.status} {e.text}")
         log.info(f"Retrying bot login in {RETRY_DELAY} seconds...")
-        time.sleep(RETRY_DELAY) # Wait for 10 minutes before trying again
+        time.sleep(RETRY_DELAY) # Wait before trying again to allow the ban to lift.
 
     except discord.errors.LoginFailure:
         # This catches an invalid token. This is a permanent failure.
         log.error("FATAL: Improper token passed. The bot will not restart. Please check BOT_TOKEN.")
-        break # Exit the loop and the script if the token is wrong.
+        break # Exit the loop and the script.
 
     except Exception as e:
-        # Catch any other unexpected errors.
-        log.error(f"FATAL: An unexpected error occurred: {e}", exc_info=True)
-        log.info(f"Restarting bot after a crash in {RETRY_DELAY} seconds...")
+        # Catch any other unexpected errors during the bot's runtime.
+        log.error(f"An unexpected error occurred: {e}", exc_info=True)
+        # We need to reset the ready flag if the bot crashes and restarts.
+        BOT_IS_READY = False
+        log.info(f"Restarting bot after crash in {RETRY_DELAY} seconds...")
         time.sleep(RETRY_DELAY)
 
-# This line might not be reached if the bot runs indefinitely or exits via exit()
 log.info("Bot process has exited.")
