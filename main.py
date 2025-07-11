@@ -208,17 +208,17 @@ def notify():
                 # execution itself using something the loop understands, like ensure_future or create_task.
                 # The most robust way is often to create the task first.
 
-                # ✅ Option 1: Create Task then schedule (More explicit)
-                future = asyncio.run_coroutine_threadsafe(send_discord_message(), bot.loop)
-                log.info("Task scheduling requested via run_coroutine_threadsafe.")
+                #  Option 1: Create Task then schedule (More explicit)
+                #future = asyncio.run_coroutine_threadsafe(send_discord_message(), bot.loop)
+                #log.info("Task scheduling requested via run_coroutine_threadsafe.")
                  # Optional: Add a callback if you need to know when it finishes/errors, but maybe overkill here.
                 # # future.add_done_callback(lambda f: log.info(f"Discord send task completed: {f.result()} or exception: {f.exception()}"))
 
-                # Option 2: Simpler scheduling via create_task within call_soon_threadsafe's lambda (Common pattern)
+                # ✅ Option 2: Simpler scheduling via create_task within call_soon_threadsafe's lambda (Common pattern)
                 #   This ensures create_task is called *within* the bot's loop thread.
-                # bot.loop.call_soon_threadsafe(lambda: asyncio.create_task(send_discord_message()))
+                bot.loop.call_soon_threadsafe(lambda: asyncio.create_task(send_discord_message()))
 
-                # log.info("Task scheduling requested via call_soon_threadsafe.")
+                log.info("Task scheduling requested via call_soon_threadsafe.")
                 # Return success immediately after queuing
                 return jsonify({"status": "Message queued for sending"}), 200
             else:
