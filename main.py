@@ -91,11 +91,11 @@ def notify():
         
             
             # 1. ⚠️🚧 Check API Key - Essential ONLY for POST requests
-             api_key = request.headers.get("X-API-Key")
-             log.info(f"Checking API Key for POST. Header: {'Present' if api_key else 'Missing'}")
-             if api_key != API_SECRET:
+            api_key = request.headers.get("X-API-Key")
+            log.info(f"Checking API Key for POST. Header: {'Present' if api_key else 'Missing'}")
+            if api_key != API_SECRET:
                 # Log the first few chars for debugging without exposing the whole key if wrong
-               provided_key_snippet = str(api_key)[:5] + '...' if api_key else 'None'
+                provided_key_snippet = str(api_key)[:5] + '...' if api_key else 'None'
                 log.warning(f"Unauthorized POST request attempt. Provided key snippet: '{provided_key_snippet}'")
                 return jsonify({"error": "Unauthorized"}), 401
             log.info("API Key validated successfully for POST request.")
