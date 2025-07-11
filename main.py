@@ -62,7 +62,7 @@ def notify():
     """
     API endpoint to receive notifications (POST), keep-alive pings (GET),
     or header-only keep-alive pings (HEAD for UptimeRobot Free Tier).
-    Sends Discord messages for POST requests. Requires api-key header for POST.
+    Sends Discord messages for POST requests. Requires X-API-Key header for POST.
     """
     log.info(f"Received {request.method} request on /notify endpoint.") # Log method
 
@@ -88,20 +88,21 @@ def notify():
         elif request.method == 'POST':
             log.info("Processing POST request...")
 
-            # --- ⚠️🚧 API KEY CHECK DISABLED FOR DEBUGGING ---
+        
             
-            # 1. Check API Key - Essential ONLY for POST requests
-            # api_key = request.headers.get("api-key")
-            # log.info(f"Checking API Key for POST. Header: {'Present' if api_key else 'Missing'}")
-            # if api_key != API_SECRET:
+            # 1. ⚠️🚧 Check API Key - Essential ONLY for POST requests
+             api_key = request.headers.get("X-API-Key")
+             log.info(f"Checking API Key for POST. Header: {'Present' if api_key else 'Missing'}")
+             if api_key != API_SECRET:
                 # Log the first few chars for debugging without exposing the whole key if wrong
-            #    provided_key_snippet = str(api_key)[:5] + '...' if api_key else 'None'
-            #    log.warning(f"Unauthorized POST request attempt. Provided key snippet: '{provided_key_snippet}'")
-            #    return jsonify({"error": "Unauthorized"}), 401
-            #log.info("API Key validated successfully for POST request.")
-            # --- End API Key Check ---
+               provided_key_snippet = str(api_key)[:5] + '...' if api_key else 'None'
+                log.warning(f"Unauthorized POST request attempt. Provided key snippet: '{provided_key_snippet}'")
+                return jsonify({"error": "Unauthorized"}), 401
+            log.info("API Key validated successfully for POST request.")
             
-            # --- API KEY CHECK DISABLED FOR DEBUGGING ⚠️🚧 ---
+            # --- End API Key Check ⚠️🚧---
+            
+      
 
             # 2. Check for JSON body and parse it (POST only)
             if not request.is_json:
@@ -207,16 +208,17 @@ def notify():
                 # execution itself using something the loop understands, like ensure_future or create_task.
                 # The most robust way is often to create the task first.
 
-                # Option 1: Create Task then schedule (More explicit)
-                # future = asyncio.run_coroutine_threadsafe(send_discord_message(), bot.loop)
-                # # Optional: Add a callback if you need to know when it finishes/errors, but maybe overkill here.
+                # ✅ Option 1: Create Task then schedule (More explicit)
+                future = asyncio.run_coroutine_threadsafe(send_discord_message(), bot.loop)
+                log.info("Task scheduling requested via run_coroutine_threadsafe.")
+                 # Optional: Add a callback if you need to know when it finishes/errors, but maybe overkill here.
                 # # future.add_done_callback(lambda f: log.info(f"Discord send task completed: {f.result()} or exception: {f.exception()}"))
 
                 # Option 2: Simpler scheduling via create_task within call_soon_threadsafe's lambda (Common pattern)
                 #   This ensures create_task is called *within* the bot's loop thread.
-                bot.loop.call_soon_threadsafe(lambda: asyncio.create_task(send_discord_message()))
+                # bot.loop.call_soon_threadsafe(lambda: asyncio.create_task(send_discord_message()))
 
-                log.info("Task scheduling requested via call_soon_threadsafe.")
+                # log.info("Task scheduling requested via call_soon_threadsafe.")
                 # Return success immediately after queuing
                 return jsonify({"status": "Message queued for sending"}), 200
             else:
