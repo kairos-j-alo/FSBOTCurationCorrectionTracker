@@ -1,11 +1,14 @@
 import os
+import time
+import logging
+import asyncio
+from threading import Thread
+
 import discord
 from discord.ext import commands
 from flask import Flask, request, jsonify
-from threading import Thread
 from dotenv import load_dotenv
-import logging
-import asyncio
+
 
 # --- Configuration ---
 
@@ -263,19 +266,31 @@ flask_thread.start()
 
 # --- Discord Bot Execution ---
 # This should be the main blocking call at the end of the script
-try:
-    log.info("Starting Discord bot login and connection...")
-    bot.run(BOT_TOKEN)
-except discord.LoginFailure:
-    log.error("FATAL: Improper token passed to bot.run(). Check BOT_TOKEN.", exc_info=False)
-    exit(1) # Exit if login fails
-except discord.errors.PrivilegedIntentsRequired:
-    log.error("FATAL: Privileged intents (likely Server Members or Message Content) are not enabled in the Discord Developer Portal.", exc_info=False)
-    log.error("Please go to https://discord.com/developers/applications/ -> Your App -> Bot -> Privileged Gateway Intents and enable them.")
-    exit(1) # Exit if intents are missing
-except Exception as e:
-     log.error(f"FATAL: An unexpected error occurred while running the bot: {e}", exc_info=True)
-     exit(1) # Exit on other fatal bot errors
+RETRY_DELAY = 600 # Delay in seconds (600 seconds = 10 minutes)
+
+while True:
+    try:
+        log.info("Attempting to start Discord bot...")
+        # The bot.run() call is blocking, so the script will stay here
+        # if the login is successful and the bot is running.
+        bot.run(BOT_TOKEN)
+
+    except discord.errors.HTTPException as e:
+        # This catches login errors like 429 Too Many Requests.
+        log.error(f"FATAL: Discord HTTP Exception: {e.status} {e.text}")
+        log.info(f"Retrying bot login in {RETRY_DELAY} seconds...")
+        time.sleep(RETRY_DELAY) # Wait for 10 minutes before trying again
+
+    except discord.errors.LoginFailure:
+        # This catches an invalid token. This is a permanent failure.
+        log.error("FATAL: Improper token passed. The bot will not restart. Please check BOT_TOKEN.")
+        break # Exit the loop and the script if the token is wrong.
+
+    except Exception as e:
+        # Catch any other unexpected errors.
+        log.error(f"FATAL: An unexpected error occurred: {e}", exc_info=True)
+        log.info(f"Restarting bot after a crash in {RETRY_DELAY} seconds...")
+        time.sleep(RETRY_DELAY)
 
 # This line might not be reached if the bot runs indefinitely or exits via exit()
 log.info("Bot process has exited.")
