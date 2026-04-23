@@ -24,11 +24,9 @@ API_SECRET = os.getenv("SECRET_API_KEY")
 
 # Ensure environment variables are actually set
 if not BOT_TOKEN:
-    # This block is now correctly indented
     log.error("FATAL: BOT_TOKEN environment variable is missing!")
     exit(1)
 if not API_SECRET:
-    # This block is now correctly indented
     log.error("FATAL: SECRET_API_KEY environment variable is missing!")
     exit(1)
 
@@ -43,7 +41,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    # This block is now correctly indented
     log.info(f'Bot logged in as {bot.user.name} ({bot.user.id})')
     log.info('Bot is ready and listening for API calls.')
 
@@ -53,7 +50,6 @@ app = Flask(__name__)
 
 @app.route('/notify', methods=['POST', 'GET', 'HEAD'])
 def notify():
-    # Everything inside this function is now correctly indented
     log.info(f"Received {request.method} request on /notify endpoint.")
 
     try:
